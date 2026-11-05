@@ -1,4 +1,4 @@
-# Hermes Skill Manager v1.2.0
+# Hermes Skill Manager v1.2.1
 
 Plugin **unificado** (Agent + Desktop) para Hermes Agent v0.22.7+. Gerencia uma biblioteca compartilhada de skills com seleção individual do GitHub, organização por categoria e catálogo para seus bots. **Não adiciona ferramentas ao modelo, não ativa skills em perfis e não faz chamadas de IA.**
 

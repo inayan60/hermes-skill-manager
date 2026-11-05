@@ -209,7 +209,6 @@ function SkillManager({request, initialTab='discover'}) {
           h(Button,{onClick:()=>setPreview(null)},'Fechar')),
         h('p',{style:muted},'Prévia não equivale a auditoria de segurança. Arquivos baixados não são executados.'),
         h('pre',{style:{whiteSpace:'pre-wrap',overflow:'auto',fontFamily:'monospace',fontSize:12}},preview.body))))
-  )
 }
 
 export default {

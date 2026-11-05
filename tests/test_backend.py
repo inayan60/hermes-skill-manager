@@ -29,6 +29,7 @@ def request(path, body=None):
 @pytest.fixture(autouse=True)
 def fake_network(tmp_path, monkeypatch):
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'appdata'))
+    monkeypatch.setattr(api, '_native_profiles', lambda: [])
     commit = 'a' * 40
     blobs = {
         'skills/one/SKILL.md': b'---\nname: One Skill\ndescription: First test\ncategory: Infraestrutura\n---\n# One',

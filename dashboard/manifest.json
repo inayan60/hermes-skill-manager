@@ -1,7 +1,7 @@
 {
   "name": "hermes-skill-manager",
   "label": "Skill Manager",
-  "description": "Biblioteca e curadoria de skills compartilhadas",
-  "version": "1.2.1",
+  "description": "Biblioteca compartilhada e habilitação por perfil (Hermes nativo)",
+  "version": "1.3.0",
   "api": "plugin_api.py"
 }

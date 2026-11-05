@@ -48,6 +48,108 @@ function Tab({name,active,onClick}) {
     background:active?'var(--ui-accent-muted, rgba(100,140,220,.14))':COLORS.raised}}, name)
 }
 
+function ProfileManager({call,run,busy}) {
+  const [names,setNames]=useState([])
+  const [profile,setProfile]=useState('')
+  const [snapshot,setSnapshot]=useState(null)
+  const [loading,setLoading]=useState(false)
+  const [filter,setFilter]=useState('')
+  const [statusFilter,setStatusFilter]=useState('Todos')
+  const [review,setReview]=useState(null)
+  const [refresh,setRefresh]=useState(0)
+  const [localError,setLocalError]=useState('')
+  useEffect(()=>{
+    let live=true
+    call('/available-profiles').then(d=>{if(!live)return;
+      const rows=d.profiles||[];setNames(rows);setProfile(p=>rows.some(x=>x.name===p)?p:(rows[0]?.name||''))
+    }).catch(e=>{if(live)setLocalError(String(e))})
+    return()=>{live=false}
+  },[])
+  useEffect(()=>{
+    if(!profile)return
+    let live=true
+    setLoading(true);setSnapshot(null);setReview(null);setLocalError('')
+    call('/profile-skills?profile='+encodeURIComponent(profile)).then(d=>{if(live)setSnapshot(d)})
+      .catch(e=>{if(live)setLocalError(String(e))})
+      .finally(()=>{if(live)setLoading(false)})
+    return()=>{live=false}
+  },[profile,refresh])
+  const list=snapshot?.skills||[]
+  const statuses={enabled:'Habilitada',disabled:'Desabilitada',pending_review:'Pendente de revisão',
+    not_associated:'Não associada',conflict:'Conflito'}
+  const visible=list.filter(s=>{
+    const content=(s.name+' '+s.description+' '+s.relative_dir+' '+s.repository).toLowerCase()
+    return content.includes(filter.trim().toLowerCase()) &&
+      (statusFilter==='Todos'||s.status===statusFilter)
+  })
+  const counts={enabled:0,disabled:0,pending_review:0,not_associated:0,conflict:0}
+  for (const s of list)counts[s.status]=(counts[s.status]||0)+1
+  const reload=()=>setRefresh(i=>i+1)
+  async function action(skill,what) {
+    await run(async()=>{
+      await call('/profile-skills/set',{profile,skill_id:skill.id,action:what});reload()
+    },what==='enable'?'Skill habilitada somente no perfil '+profile+'.':
+      what==='disable'?'Skill desabilitada somente em '+profile+'.':'Associação individual removida de '+profile+'.')
+  }
+  async function showReview(skill) {
+    await run(async()=>{
+      const v=await call('/profile-skill-preview?skill_id='+encodeURIComponent(skill.id))
+      setReview({skill,...v})
+    })
+  }
+  async function approval(approved) {
+    if(!review)return
+    await run(async()=>{
+      await call('/reviews/set',{skill_id:review.skill.id,approved});setReview(null);reload()
+    },approved?'Revisão aprovada. A associação ainda precisa ser habilitada no perfil.':'Aprovação revogada.')
+  }
+  return h('div',{style:{display:'grid',gap:12,marginTop:12}},
+    h(Panel,{title:'Habilitação por perfil',subtitle:'Usa skills.external_dirs e skills.disabled do Hermes 0.22.7. Nenhum arquivo é copiado; as alterações valem apenas para o perfil selecionado.'},
+      h('div',{style:line},
+        h('label',{style:{...label,marginBottom:0}},'Perfil'),
+        h('select',{value:profile,onChange:e=>{setSnapshot(null);setProfile(e.target.value)},style:{...inputStyle,flex:'0 1 240px'},disabled:busy||loading},
+          ...names.map(p=>h('option',{key:p.name,value:p.name},p.display_name+' ('+p.name+')'))),
+        h(Button,{onClick:reload,disabled:loading||busy||!profile},'Atualizar status'),
+        profile&&h(Pill,null,'Perfil: '+profile)),
+      loading&&h('p',{style:muted},'Consultando skills nativas do perfil…'),
+      localError&&h(Notice,{error:localError}),
+      snapshot&&h('p',{style:muted},'Biblioteca: '+snapshot.configured_root+' • Diretórios externos já configurados no perfil: '+snapshot.external_dirs_count)),
+    snapshot&&h(Panel,{title:'Skills da biblioteca compartilhada',subtitle:'A aprovação é por conteúdo de SKILL.md. Atualizar o arquivo exige nova revisão; vínculos existentes permanecem até sua decisão.'},
+      h('div',{style:{...line,marginBottom:7}},
+        h(Input,{value:filter,onChange:setFilter,placeholder:'Buscar skill, repositório, pasta…'}),
+        h('select',{value:statusFilter,onChange:e=>setStatusFilter(e.target.value),style:{...inputStyle,flex:'0 1 185px'}},
+          ...['Todos',...Object.keys(statuses)].map(x=>h('option',{key:x,value:x},x==='Todos'?x:statuses[x])))),
+      h('div',{style:{...line,marginBottom:8}},...Object.keys(statuses).map(x=>h(Pill,{key:x},`${statuses[x]}: ${counts[x]||0}`))),
+      ...visible.slice(0,250).map(s=>h('div',{key:s.id,style:{borderBottom:`1px solid ${COLORS.border}`,padding:'12px 0',display:'grid',gap:7}},
+        h('div',{style:{...line,justifyContent:'space-between'}},
+          h('div',{style:{flex:1,minWidth:170}},h('strong',null,s.name),
+            h('div',{style:muted},s.relative_dir),
+            s.description&&h('div',{style:muted},s.description)),
+          h(Pill,null,statuses[s.status]||s.status),
+          !s.approved&&h(Pill,null,'Não revisada'),
+          s.association==='inherited'&&h(Pill,null,'Via diretório ancestral')),
+        (s.error||s.conflict)&&h('div',{style:{color:'#e5a072',fontSize:12}},s.error||s.conflict),
+        h('div',{style:line},
+          h(Button,{disabled:busy,onClick:()=>showReview(s)},s.approved?'Revisão / Revogar':'Prévia / Aprovar'),
+          s.association==='none'&&h(Button,{primary:true,disabled:busy||!!s.error||!s.approved,onClick:()=>action(s,'enable')},'Habilitar'),
+          s.association!=='none'&&s.status==='disabled'&&h(Button,{primary:true,disabled:busy||!s.approved||!!s.error,onClick:()=>action(s,'enable')},'Habilitar'),
+          s.association!=='none'&&s.status!=='disabled'&&h(Button,{disabled:busy,onClick:()=>action(s,'disable')},'Desabilitar'),
+          s.association==='individual'&&h(Button,{disabled:busy,onClick:()=>action(s,'detach')},'Desassociar')))),
+      visible.length>250&&h('div',{style:muted},'Mostrando 250 de '+visible.length+' skills; refine a pesquisa.'),
+      !visible.length&&h('p',{style:muted},'Nenhuma skill encontrada para esse filtro.')),
+    review&&h('div',{role:'dialog','aria-label':'Revisão de skill',style:{position:'fixed',inset:0,zIndex:5000,
+      background:'rgba(0,0,0,.7)',display:'flex',alignItems:'center',justifyContent:'center',padding:18}},
+      h('div',{style:{...cardStyle,background:'var(--ui-bg-primary,#1f2329)',width:'min(920px,96vw)',maxHeight:'88vh',overflow:'hidden'}},
+        h('strong',null,review.skill.name),
+        h('div',{style:muted},review.path+' • SHA256 '+review.sha256.slice(0,16)),
+        h('div',{style:muted},'Aprovar indica revisão manual do conteúdo. Não é auditoria de segurança automatizada.'),
+        h('pre',{style:{whiteSpace:'pre-wrap',overflow:'auto',fontSize:12,padding:10,background:COLORS.raised}},review.content),
+        h('div',{style:line},
+          h(Button,{disabled:busy,onClick:()=>setReview(null)},'Fechar'),
+          review.skill.approved?h(Button,{disabled:busy,onClick:()=>approval(false)},'Revogar aprovação'):
+            h(Button,{primary:true,disabled:busy,onClick:()=>approval(true)},'Aprovar revisão')))))
+}
+
 function SkillManager({request, initialTab='discover'}) {
   const [tab,setTab]=useState(initialTab)
   const [busy,setBusy]=useState(false)
@@ -139,7 +241,7 @@ function SkillManager({request, initialTab='discover'}) {
     h('div',{style:{...line,marginBottom:16}},
       h(Tab,{name:'GitHub',active:tab==='discover',onClick:()=>{setTab('discover');setFilter('');setCat('Todas')}}),
       h(Tab,{name:'Biblioteca',active:tab==='library',onClick:()=>{setTab('library');setFilter('');setCat('Todas')}}),
-      h(Tab,{name:'Perfis (leitura)',active:tab==='profiles',onClick:()=>setTab('profiles')}),
+      h(Tab,{name:'Perfis',active:tab==='profiles',onClick:()=>setTab('profiles')}),
       h(Tab,{name:'Configurações',active:tab==='settings',onClick:()=>setTab('settings')})),
     h(Notice,{error,message}),
     !libraryReady && tab!=='settings' && h('div',{style:{...cardStyle,margin:'12px 0'}},
@@ -182,14 +284,7 @@ function SkillManager({request, initialTab='discover'}) {
             categoryChooser(x),h(Button,{disabled:busy,onClick:()=>updateItem(x)},'Atualizar'),
             h(Button,{disabled:busy,onClick:()=>removeItem(x)},'Remover')))),
         !stocked.length && h('p',{style:muted},'Nenhuma skill encontrada.'))),
-    tab==='profiles' && h('div',{style:{display:'grid',gap:12,marginTop:12}},
-      h(Panel,{title:'Skills instaladas nos perfis Hermes',subtitle:'Consulta local, somente leitura. A estrutura varia conforme a instalação.'},
-        h(Button,{disabled:busy,onClick:()=>run(async()=>setProfiles(await call('/profiles')))},'Pesquisar perfis'),
-        profiles && h('div',{style:{display:'grid',gap:10}},
-          h('div',{style:muted},profiles.note),
-          ...profiles.profiles.map(x=>h('div',{key:x.profile,style:{...cardStyle,gap:6}},
-            h('strong',null,`${x.profile}: ${x.count} skills`),
-            h('div',{style:{...muted,maxHeight:120,overflow:'auto'}},x.sample.join(' • '))))))),
+    tab==='profiles' && h(ProfileManager,{call,run,busy}),
     tab==='settings' && h('div',{style:{display:'grid',gap:12,marginTop:12}},
       h(Panel,{title:'Pasta compartilhada',subtitle:'Salva no computador onde o gateway Hermes está rodando, permanecendo entre execuções.'},
         h('label',null,h('span',{style:label},'Biblioteca de skills (caminho absoluto ou pasta UNC)'),

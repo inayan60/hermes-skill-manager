@@ -1,4 +1,4 @@
 name: hermes-skill-manager
-version: "1.2.1"
-description: "Biblioteca e curadoria de skills com pagina integrada no Hermes Desktop. Nenhuma tool ou hook para IA."
+version: "1.3.0"
+description: "Catálogo e curadoria de skills; vinculação nativa por perfil via skills.external_dirs e skills.disabled."
 author: Hermes Bots

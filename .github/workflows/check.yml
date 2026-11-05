@@ -13,11 +13,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test Python backend
+      - name: Test Python backend and isolation
         run: |
-          python -m pip install fastapi httpx pytest
-          python -m pytest -q tests/test_backend.py
-      - name: Check Desktop JavaScript syntax
+          python -m pip install fastapi httpx pytest PyYAML
+          python -m pytest -q tests/
+      - name: Check Desktop entry as ESM
         run: |
-          cp desktop/plugin.js /tmp/hermes-skill-manager-plugin.mjs
-          node --check /tmp/hermes-skill-manager-plugin.mjs
+          cp desktop/plugin.js /tmp/hsm-plugin.mjs
+          node --check /tmp/hsm-plugin.mjs
+          node tests/smoke-desktop.mjs

@@ -704,7 +704,7 @@ def _profile_config_scope(profile, *, write=False):
 def _native_resolved_catalog():
     """Must be invoked INSIDE the selected profile scope, for accurate shadow detection."""
     from tools.skills_tool import _skill_catalog
-    return _skill_catalog(skip_disabled=True, include_hidden=True)
+    return _skill_catalog(skip_disabled=False, include_hidden=True)
 
 
 def _as_list(value):
@@ -781,6 +781,65 @@ class ProfileSkillAction(BaseModel):
 class ReviewAction(BaseModel):
     skill_id: str = Field(min_length=16, max_length=32)
     approved: bool
+
+
+class ProfileSyncInput(BaseModel):
+    profile: str = Field(min_length=1, max_length=120)
+    dry_run: bool = True
+
+
+def _plan_profile_sync(external_dirs, library_skills):
+    """Remove shared/ancestor mounts, preserving only explicit skill folders.
+
+    No broad external root is ever converted into a set of enabled skills:
+    an inherited mount is ambiguous user intent, so migration is deny-by-default.
+    Other external folders outside this library remain untouched.
+    """
+    remove = []
+    kept = []
+    affected = []
+    for configured in external_dirs:
+        descendants = [s for s in library_skills if _relation(configured, s['directory'])]
+        # A mount exposing even one skill indirectly can expose more on the next install.
+        indirect = [s for s in descendants if _path_key(configured) != _path_key(s['directory'])]
+        if indirect:
+            remove.append(configured)
+            affected.extend(s['name'] for s in indirect)
+        else:
+            kept.append(configured)
+    return {
+        'remove': remove, 'keep': kept,
+        'affected_skills': sorted(set(affected)),
+        'changed': bool(remove),
+    }
+
+
+@router.post('/profile-skills/sync')
+def profile_skills_sync(body: ProfileSyncInput):
+    profile = _profile_name(body.profile)
+    skills = _scan_library_skills()
+    try:
+        with _LOCK:
+            with _profile_config_scope(profile, write=not body.dry_run) as (config, save):
+                values = config.get('skills') or {}
+                if not isinstance(values, dict):
+                    raise HTTPException(409, 'Configuração skills inválida.')
+                dirs = _as_list(values.get('external_dirs'))
+                plan = _plan_profile_sync(dirs, skills)
+                if plan['changed'] and not body.dry_run:
+                    # Do not touch skills.disabled, local skills or other toolsets.
+                    # Removing the ancestor mount guarantees newly installed
+                    # shared skills remain absent until explicitly associated.
+                    values['external_dirs'] = plan['keep']
+                    config['skills'] = values
+                    save()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, 'Falha ao sincronizar perfil: ' + str(exc)[:200]) from exc
+    if plan['changed'] and not body.dry_run:
+        _invalidate_hermes_skills_cache()
+    return {'ok': True, 'profile': profile, 'dry_run': body.dry_run, **plan}
 
 
 @router.get('/profile-skills')

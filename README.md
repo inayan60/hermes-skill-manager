@@ -1,4 +1,4 @@
-# Hermes Skill Manager v1.3.0
+# Hermes Skill Manager v1.4.0
 
 Plugin nativo (Agent + Desktop) para **Hermes 0.22.7**, com descoberta seletiva de skills no GitHub, biblioteca compartilhada e **habilitação individual por perfil** sem duplicação de arquivos nem ferramentas de IA.
 
@@ -26,7 +26,22 @@ Na aba **Perfis**:
 4. Clique em **Habilitar**. O plugin acrescenta **somente o diretório daquela skill** a `skills.external_dirs` do perfil, e retira seu nome de `skills.disabled` caso estivesse desabilitada.
 5. **Desabilitar** adiciona o nome a `skills.disabled`, preservando a associação. **Desassociar** remove a referência individual de `skills.external_dirs` sem excluir nenhum arquivo, quando houver associação individual.
 
-O plugin **nunca associa uma pasta de repositório inteiro automaticamente**. Skills filhas de outras skills são detectadas; associar uma pasta que também expõe outras skills é bloqueado. Se uma associação já existente usa um diretório ancestral (como `.../selecionadas/jenkins`), a interface informa **Via diretório ancestral**, permite desativar individualmente via `skills.disabled`, e não remove a pasta ancestral no botão Desassociar.
+O plugin **nunca associa uma pasta de repositório inteiro automaticamente**. Skills filhas de outras skills são detectadas; associar uma pasta que também expõe outras skills é bloqueado. Se uma associação usa um diretório ancestral, a interface informa **Via diretório ancestral**. Use **Sincronizar vínculos** para eliminar a exposição ampla sem alterar os vínculos individuais.
+
+### Sincronização de catálogo e permissões (v1.4.0)
+
+Na aba **Perfis**, selecione um profile e clique em **Sincronizar vínculos**.
+O Skill Manager apresenta uma prévia e solicita confirmação antes de alterar a configuração.
+A operação remove de `skills.external_dirs` apenas raízes compartilhadas/ancestrais
+que expõem skills da biblioteca indiretamente. **Mantém** os vínculos individuais,
+`skills.disabled`, outras fontes de skills, os arquivos da biblioteca e os demais profiles.
+É idempotente; uma segunda execução não precisa fazer alterações.
+
+**Migração conservadora:** as skills que eram expostas exclusivamente por um
+diretório ancestral deixam de estar disponíveis. Habilite explicitamente no
+profile apenas as desejadas, usando Prévia/Aprovar e Habilitar. Uma skill nova
+adicionada à biblioteca não será ativada automaticamente após a remoção da raiz
+ampla. Não é uma operação agendada nem um watcher do sistema de arquivos.
 
 ### Estados
 

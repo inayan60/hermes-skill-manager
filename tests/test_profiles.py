@@ -174,3 +174,38 @@ def test_catalogue_saved_at_parent_when_configured_skills_folder(hermes):
     api._catalog_write(root/'skills',[{'id':'two','name':'other'}])
     assert json.loads((root/'catalogo.json').read_text())['skills'][0]['id']=='two'
     assert not (root/'skills'/'catalogo.json').exists()
+
+def test_sync_removes_broad_mount_without_touching_other_profiles(hermes):
+    root, cfg, tmp = hermes
+    parent = root / 'skills' / 'owner' / 'repo'
+    individual = root / 'skills' / 'owner' / 'repo' / 'nested' / 'jenkinsfile-generator'
+    cfg['arthur-jenkins']['skills']['external_dirs'] = [str(parent), str(individual)]
+    cfg['arthur-jenkins']['skills']['disabled'] = ['bash-script-validator']
+    other = cfg['jobson']['skills']['external_dirs'][:]
+    preview = req('/profile-skills/sync', {'profile':'arthur-jenkins','dry_run':True})
+    assert preview['changed'] is True
+    assert preview['remove'] == [str(parent)]
+    assert cfg['arthur-jenkins']['skills']['external_dirs'] == [str(parent), str(individual)]
+    applied = req('/profile-skills/sync', {'profile':'arthur-jenkins','dry_run':False})
+    assert applied['changed'] is True
+    assert cfg['arthur-jenkins']['skills']['external_dirs'] == [str(individual)]
+    assert cfg['arthur-jenkins']['skills']['disabled'] == ['bash-script-validator']
+    assert cfg['jobson']['skills']['external_dirs'] == other
+    rows = req('/profile-skills?profile=arthur-jenkins')['skills']
+    assert next(x for x in rows if x['name']=='jenkinsfile-generator')['association'] == 'individual'
+    assert next(x for x in rows if x['name']=='jenkinsfile-validator')['association'] == 'none'
+    assert req('/profile-skills/sync', {'profile':'arthur-jenkins','dry_run':False})['changed'] is False
+
+
+def test_sync_does_not_mount_new_skills_or_change_unrelated_sources(hermes):
+    root, cfg, tmp = hermes
+    broad = root / 'skills'
+    other = tmp / 'other'
+    cfg['arthur-jenkins']['skills']['external_dirs'] = [str(other), str(broad)]
+    req('/profile-skills/sync', {'profile':'arthur-jenkins','dry_run':False})
+    assert cfg['arthur-jenkins']['skills']['external_dirs'] == [str(other)]
+    new_skill = root / 'skills' / 'new-skill'
+    new_skill.mkdir()
+    (new_skill / 'SKILL.md').write_text('---\\nname: new-skill\\n---\\n# New\\n')
+    items = req('/profile-skills?profile=arthur-jenkins')['skills']
+    assert next(x for x in items if x['name']=='new-skill')['association'] == 'none'

@@ -85,6 +85,22 @@ function ProfileManager({call,run,busy}) {
   const counts={enabled:0,disabled:0,pending_review:0,not_associated:0,conflict:0}
   for (const s of list)counts[s.status]=(counts[s.status]||0)+1
   const reload=()=>setRefresh(i=>i+1)
+  async function syncProfile() {
+    await run(async()=>{
+      const preview=await call('/profile-skills/sync',{profile,dry_run:true})
+      if(!preview.changed) {reload();return}
+      const names=(preview.affected_skills||[]).slice(0,12).join(', ')
+      const message='O perfil '+profile+' contém '+preview.remove.length+
+        ' diretório(s) ancestral(is) que expõem skills automaticamente.\n\n'+
+        'A sincronização removerá esses vínculos amplos. Skills associadas individualmente continuam preservadas.\n'+
+        'Skills afetadas ('+preview.affected_skills.length+'): '+names+
+        (preview.affected_skills.length>12?'…':'')+
+        '\n\nProsseguir?'
+      if(!window.confirm(message))return
+      await call('/profile-skills/sync',{profile,dry_run:false})
+      reload()
+    },'Sincronização concluída. Skills sem vínculo individual permanecem desabilitadas.')
+  }
   async function action(skill,what) {
     await run(async()=>{
       await call('/profile-skills/set',{profile,skill_id:skill.id,action:what});reload()
@@ -110,7 +126,12 @@ function ProfileManager({call,run,busy}) {
         h('select',{value:profile,onChange:e=>{setSnapshot(null);setProfile(e.target.value)},style:{...inputStyle,flex:'0 1 240px'},disabled:busy||loading},
           ...names.map(p=>h('option',{key:p.name,value:p.name},p.display_name+' ('+p.name+')'))),
         h(Button,{onClick:reload,disabled:loading||busy||!profile},'Atualizar status'),
+        h(Button,{onClick:syncProfile,disabled:loading||busy||!profile},'Sincronizar vínculos'),
         profile&&h(Pill,null,'Perfil: '+profile)),
+      snapshot&&counts.enabled+counts.disabled+counts.conflict>0 &&
+        list.some(x=>x.association==='inherited')&&
+        h('p',{style:{color:'#e5a072',fontSize:12}},
+          'Atenção: há skills herdadas de um diretório amplo. Use Sincronizar vínculos para evitar habilitação automática de novas skills.'),
       loading&&h('p',{style:muted},'Consultando skills nativas do perfil…'),
       localError&&h(Notice,{error:localError}),
       snapshot&&h('p',{style:muted},'Biblioteca: '+snapshot.configured_root+' • Diretórios externos já configurados no perfil: '+snapshot.external_dirs_count)),
